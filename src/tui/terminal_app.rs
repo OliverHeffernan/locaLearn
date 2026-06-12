@@ -10,9 +10,8 @@ use crate::{
     app::ApplicationContext,
     study_set::StudySetLayout,
     tui::{
-        FillBlankDeck, FillBlankScreen, FlashcardDeck, FlashcardStudyScreen, ModeEntry,
-        MultipleChoiceDeck, MultipleChoiceScreen, PracticeTestDocument, PracticeTestScreen, Screen,
-        ScreenTransition, StudyMode, StudyWorkspaceScreen,
+        FlashcardDeck, FlashcardStudyScreen, ModeEntry, MultipleChoiceDeck, MultipleChoiceScreen,
+        Screen, ScreenTransition, StudyMode, StudyWorkspaceScreen,
     },
     Result,
 };
@@ -49,8 +48,6 @@ impl TerminalApp {
         StudyWorkspaceScreen::new(vec![
             self.flashcards_entry(layout),
             self.multiple_choice_entry(layout),
-            self.fill_blanks_entry(layout),
-            self.practice_test_entry(layout),
         ])
     }
 
@@ -95,41 +92,6 @@ impl TerminalApp {
             })
             .unwrap_or_else(|error| {
                 ModeEntry::unavailable(StudyMode::MultipleChoice, error.to_string())
-            })
-    }
-
-    fn fill_blanks_entry(&self, layout: &StudySetLayout) -> ModeEntry {
-        FillBlankDeck::from_markdown_file(&layout.fill_blanks_path())
-            .map(|deck| {
-                deck.is_empty()
-                    .then(|| {
-                        ModeEntry::unavailable(
-                            StudyMode::FillBlanks,
-                            "No fill-in-the-blanks exercises parsed.",
-                        )
-                    })
-                    .unwrap_or_else(|| {
-                        ModeEntry::available(
-                            StudyMode::FillBlanks,
-                            Box::new(FillBlankScreen::new(deck)),
-                        )
-                    })
-            })
-            .unwrap_or_else(|error| {
-                ModeEntry::unavailable(StudyMode::FillBlanks, error.to_string())
-            })
-    }
-
-    fn practice_test_entry(&self, layout: &StudySetLayout) -> ModeEntry {
-        PracticeTestDocument::from_markdown_file(&layout.practice_test_path())
-            .map(|document| {
-                ModeEntry::available(
-                    StudyMode::PracticeTest,
-                    Box::new(PracticeTestScreen::new(document)),
-                )
-            })
-            .unwrap_or_else(|error| {
-                ModeEntry::unavailable(StudyMode::PracticeTest, error.to_string())
             })
     }
 

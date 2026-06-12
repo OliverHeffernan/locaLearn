@@ -1,15 +1,17 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
 use crate::{
     tui::{
-        FillBlankDeck, FillBlankSession, FlashcardDeck, FlashcardStudySession, MultipleChoiceDeck,
-        MultipleChoiceSession, PracticeTestDocument, StudyMode,
+        FlashcardDeck, FlashcardStudySession, MultipleChoiceDeck, MultipleChoiceSession, StudyMode,
+        render_helpers::*,
+        helpers::*
     },
     Result,
 };
+
 
 /// Result of handling screen input.
 pub enum ScreenTransition {
@@ -307,7 +309,7 @@ impl FlashcardStudyScreen {
         )
     }
 
-    fn progress_ratio(&self) -> f64 {
+    pub fn progress_ratio(&self) -> f64 {
         let stats = self.session.stats();
         progress_ratio(stats.total, stats.remaining)
     }
@@ -424,128 +426,6 @@ impl MultipleChoiceScreen {
     }
 }
 
-/// Fill-in-the-blanks study screen.
-pub struct FillBlankScreen {
-    session: FillBlankSession,
-}
-
-impl FillBlankScreen {
-    /// Creates a fill-in-the-blanks screen.
-    pub fn new(deck: FillBlankDeck) -> Self {
-        Self {
-            session: FillBlankSession::new(deck),
-        }
-    }
-}
-
-impl Screen for FillBlankScreen {
-    fn render(&self, frame: &mut Frame, area: Rect) {
-        let [header, progress, card, footer] = study_layout(area);
-        let stats = self.session.stats();
-        render_header(
-            frame,
-            header,
-            "Fill in the Blanks",
-            format!("Answered {} | Known {}", stats.answered, stats.correct),
-        );
-        render_progress(
-            frame,
-            progress,
-            progress_ratio(stats.total, stats.total.saturating_sub(stats.index)),
-        );
-        render_box(frame, card, &self.title(), &self.body(), Color::Green);
-        render_footer(
-            frame,
-            footer,
-            self.session
-                .showing_answer()
-                .then_some("1 Again | 2 Good | s Skip | p Palette | q Quit")
-                .unwrap_or("Space/Enter Reveal | s Skip | p Palette | q Quit"),
-        );
-    }
-
-    fn handle_event(&mut self, event: crossterm::event::Event) -> Result<ScreenTransition> {
-        Ok(event
-            .as_key_press_event()
-            .map(|key| FillBlankKeyBinding::from_key(key).apply(&mut self.session))
-            .unwrap_or(ScreenTransition::Stay))
-    }
-}
-
-impl FillBlankScreen {
-    fn title(&self) -> String {
-        self.session
-            .current()
-            .map(|exercise| exercise.title().to_owned())
-            .unwrap_or_else(|| "Fill blanks complete".to_owned())
-    }
-
-    fn body(&self) -> String {
-        self.session
-            .current()
-            .map(|exercise| {
-                self.session
-                    .showing_answer()
-                    .then(|| format!("{}\n\n---\n\n{}", exercise.prompt(), exercise.answer()))
-                    .unwrap_or_else(|| exercise.prompt().to_owned())
-            })
-            .unwrap_or_else(|| "All exercises complete.".to_owned())
-    }
-}
-
-/// Practice test reader screen.
-pub struct PracticeTestScreen {
-    document: PracticeTestDocument,
-    scroll: u16,
-}
-
-impl PracticeTestScreen {
-    /// Creates a practice test reader.
-    pub fn new(document: PracticeTestDocument) -> Self {
-        Self {
-            document,
-            scroll: 0,
-        }
-    }
-}
-
-impl Screen for PracticeTestScreen {
-    fn render(&self, frame: &mut Frame, area: Rect) {
-        let [header, body, footer] = Layout::vertical([
-            Constraint::Length(3),
-            Constraint::Min(8),
-            Constraint::Length(3),
-        ])
-        .areas(area);
-        render_header(
-            frame,
-            header,
-            "Practice Test",
-            "Scroll through the generated test",
-        );
-        frame.render_widget(
-            Paragraph::new(self.document.content())
-                .block(
-                    Block::default()
-                        .title("Practice Test")
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Blue)),
-                )
-                .scroll((self.scroll, 0))
-                .wrap(Wrap { trim: false }),
-            body,
-        );
-        render_footer(frame, footer, "Up/Down Scroll | p Palette | q Quit");
-    }
-
-    fn handle_event(&mut self, event: crossterm::event::Event) -> Result<ScreenTransition> {
-        Ok(event
-            .as_key_press_event()
-            .map(|key| PracticeTestKeyBinding::from_key(key).apply(self))
-            .unwrap_or(ScreenTransition::Stay))
-    }
-}
-
 enum FlashcardKeyBinding {
     Reveal,
     Known,
@@ -631,88 +511,6 @@ impl MultipleChoiceKeyBinding {
     }
 }
 
-enum FillBlankKeyBinding {
-    Reveal,
-    Known,
-    Missed,
-    Skip,
-    Quit,
-    Ignore,
-}
-
-impl FillBlankKeyBinding {
-    fn from_key(key: &crossterm::event::KeyEvent) -> Self {
-        use crossterm::event::KeyCode;
-
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => Self::Quit,
-            KeyCode::Char(' ') | KeyCode::Enter => Self::Reveal,
-            KeyCode::Char('1') | KeyCode::Char('a') => Self::Missed,
-            KeyCode::Char('2') | KeyCode::Char('g') => Self::Known,
-            KeyCode::Char('s') | KeyCode::Right => Self::Skip,
-            _ => Self::Ignore,
-        }
-    }
-
-    fn apply(self, session: &mut FillBlankSession) -> ScreenTransition {
-        match self {
-            Self::Reveal => {
-                session.reveal();
-                ScreenTransition::Stay
-            }
-            Self::Known => {
-                session.showing_answer().then(|| session.mark_known());
-                ScreenTransition::Stay
-            }
-            Self::Missed => {
-                session.showing_answer().then(|| session.mark_missed());
-                ScreenTransition::Stay
-            }
-            Self::Skip => {
-                session.skip();
-                ScreenTransition::Stay
-            }
-            Self::Quit => ScreenTransition::Quit,
-            Self::Ignore => ScreenTransition::Stay,
-        }
-    }
-}
-
-enum PracticeTestKeyBinding {
-    Up,
-    Down,
-    Quit,
-    Ignore,
-}
-
-impl PracticeTestKeyBinding {
-    fn from_key(key: &crossterm::event::KeyEvent) -> Self {
-        use crossterm::event::KeyCode;
-
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => Self::Quit,
-            KeyCode::Up => Self::Up,
-            KeyCode::Down => Self::Down,
-            _ => Self::Ignore,
-        }
-    }
-
-    fn apply(self, screen: &mut PracticeTestScreen) -> ScreenTransition {
-        match self {
-            Self::Up => {
-                screen.scroll = screen.scroll.saturating_sub(1);
-                ScreenTransition::Stay
-            }
-            Self::Down => {
-                screen.scroll = screen.scroll.saturating_add(1);
-                ScreenTransition::Stay
-            }
-            Self::Quit => ScreenTransition::Quit,
-            Self::Ignore => ScreenTransition::Stay,
-        }
-    }
-}
-
 struct QuitKeyBinding;
 
 impl QuitKeyBinding {
@@ -739,78 +537,3 @@ impl KeyPressEvent for crossterm::event::Event {
     }
 }
 
-fn study_layout(area: Rect) -> [Rect; 4] {
-    Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Min(8),
-        Constraint::Length(3),
-    ])
-    .areas(area)
-}
-
-fn render_header(frame: &mut Frame, area: Rect, mode: &str, stats: impl Into<String>) {
-    frame.render_widget(
-        Paragraph::new(format!("{mode} | {}", stats.into()))
-            .block(Block::default().borders(Borders::ALL))
-            .alignment(Alignment::Center),
-        area,
-    );
-}
-
-fn render_progress(frame: &mut Frame, area: Rect, ratio: f64) {
-    frame.render_widget(
-        Gauge::default()
-            .block(Block::default().borders(Borders::ALL).title("Progress"))
-            .gauge_style(Style::default().fg(Color::Green))
-            .ratio(ratio),
-        area,
-    );
-}
-
-fn render_box(frame: &mut Frame, area: Rect, title: &str, text: &str, color: Color) {
-    frame.render_widget(
-        Paragraph::new(text.to_owned())
-            .block(
-                Block::default()
-                    .title(title.to_owned())
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(color)),
-            )
-            .alignment(Alignment::Left)
-            .wrap(Wrap { trim: false }),
-        area,
-    );
-}
-
-fn render_footer(frame: &mut Frame, area: Rect, controls: &str) {
-    frame.render_widget(
-        Paragraph::new(controls.to_owned())
-            .block(Block::default().borders(Borders::ALL))
-            .alignment(Alignment::Center)
-            .wrap(Wrap { trim: true }),
-        area,
-    );
-}
-
-fn progress_ratio(total: usize, remaining: usize) -> f64 {
-    (total != 0)
-        .then(|| (total.saturating_sub(remaining)) as f64 / total as f64)
-        .unwrap_or(1.0)
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
-    let [_, vertical, _] = Layout::vertical([
-        Constraint::Percentage((100 - percent_y) / 2),
-        Constraint::Percentage(percent_y),
-        Constraint::Percentage((100 - percent_y) / 2),
-    ])
-    .areas(area);
-    let [_, horizontal, _] = Layout::horizontal([
-        Constraint::Percentage((100 - percent_x) / 2),
-        Constraint::Percentage(percent_x),
-        Constraint::Percentage((100 - percent_x) / 2),
-    ])
-    .areas(vertical);
-    horizontal
-}

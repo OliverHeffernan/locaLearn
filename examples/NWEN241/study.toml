@@ -1,0 +1,13 @@
+name = "NWEN241"
+version = 1
+
+[provider]
+kind = "copilot"
+
+[generation]
+artifacts = [
+    "flashcards",
+    "multiple_choice",
+    "fill_blanks",
+    "practice_test",
+]
