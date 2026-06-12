@@ -1,0 +1,27 @@
+# Rust build artifacts
+/target/
+
+# Generated local study workspaces and artifacts
+/study-sets/
+/studies/
+/artifacts/
+
+# Logs and crash dumps
+*.log
+*.pid
+*.profraw
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and IDE state
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
